@@ -1,0 +1,634 @@
+{
+  "info": {
+    "name": "Knowledge Base Portal — API",
+    "description": "Colección para probar manualmente la API del Knowledge Base Portal.\n\n**Cómo usarla**\n1. Importa este archivo en Postman (Import → File).\n2. En la pestaña *Variables* de la colección, completa `adminEmail` y `adminPassword` (columna *Current value*).\n3. Ejecuta **1. Auth → Login (admin)**: guarda el token en `token` y todas las peticiones lo usan.\n4. En **4. Componentes → Subir componente con archivo**, elige un archivo en el campo `file` del Body.\n5. Puedes ejecutar las peticiones una por una, en orden, o toda la colección con *Run collection*.\n\nLas peticiones que crean recursos guardan sus identificadores (`solutionCode`, `componentId`, `userId`, `downloadUrl`) para que las siguientes funcionen sin copiar nada. El consultor creado en **Register** usa su propio token (`consultantToken`) para las pruebas de permisos, sin reemplazar la sesión del admin.\n\nDocumentación completa: `Backend/API.md`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api" },
+    { "key": "adminEmail", "value": "" },
+    { "key": "adminPassword", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "consultantToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "solutionCode", "value": "postman-test-solution" },
+    { "key": "documentType", "value": "technical" },
+    { "key": "componentId", "value": "" },
+    { "key": "downloadUrl", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.token) {",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.test('El usuario es admin', () => pm.expect(body.user.role).to.eql('admin'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Inicia sesión con `adminEmail` y `adminPassword` y guarda el token en `token`. Para entrar como otro usuario, cambia temporalmente esas variables."
+          }
+        },
+        {
+          "name": "Login con contraseña incorrecta (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('Mensaje genérico', () => pm.expect(pm.response.json().error).to.eql('Credenciales inválidas.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"incorrecta-123\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Register (nuevo consultor)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.variables.set('randomEmail', 'consultor' + Date.now() + '@test.com');"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Rol por defecto: consultant', () => pm.expect(body.user.role).to.eql('consultant'));",
+                  "if (body.token) {",
+                  "  pm.collectionVariables.set('consultantToken', body.token);",
+                  "  pm.collectionVariables.set('userId', body.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Consultor de Prueba\",\n  \"email\": \"{{randomEmail}}\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Crea un consultor con un correo único. Guarda su token en `consultantToken` (no reemplaza la sesión del admin) y su id en `userId`."
+          }
+        },
+        {
+          "name": "Register con datos inválidos (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('Un error por campo', () => pm.expect(pm.response.json().details.length).to.eql(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"\",\n  \"email\": \"correo-invalido\",\n  \"password\": \"123\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/auth/me", "description": "Usuario de la sesión actual." }
+        },
+        {
+          "name": "Me sin token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"] }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/auth/me" }
+        }
+      ]
+    },
+    {
+      "name": "2. Permisos (403)",
+      "description": "Peticiones hechas con el token del consultor creado en Register (`consultantToken`).",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{consultantToken}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "Consultor crea solución (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('403 Forbidden', () => pm.response.to.have.status(403));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{baseUrl}}/solutions"
+          }
+        },
+        {
+          "name": "Consultor lista usuarios (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('403 Forbidden', () => pm.response.to.have.status(403));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "Consultor lee el catálogo (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/solutions" }
+        }
+      ]
+    },
+    {
+      "name": "3. Usuarios (admin)",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Sin password_hash', () => pm.expect(pm.response.text()).to.not.include('password'));"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/users" }
+        },
+        {
+          "name": "Cambiar rol a author",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Rol actualizado', () => pm.expect(pm.response.json().user.role).to.eql('author'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"role\": \"author\"\n}" },
+            "url": "{{baseUrl}}/users/{{userId}}/role",
+            "description": "Cambia el rol del usuario de `userId` (lo llena Register). Valores: consultant, author, admin."
+          }
+        },
+        {
+          "name": "Rol inválido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('400 Bad Request', () => pm.response.to.have.status(400));"] }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"role\": \"superuser\"\n}" },
+            "url": "{{baseUrl}}/users/{{userId}}/role"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Soluciones",
+      "item": [
+        {
+          "name": "Listar soluciones",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/solutions?search=&type=&docStatus=",
+              "host": ["{{baseUrl}}"],
+              "path": ["solutions"],
+              "query": [
+                { "key": "search", "value": "", "description": "Texto en name o summary" },
+                { "key": "type", "value": "", "description": "addon | plugin | integration" },
+                { "key": "docStatus", "value": "", "description": "complete | partial | pending" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cobertura documental",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/solutions/coverage" }
+        },
+        {
+          "name": "Ficha (seed: accessibility-assistant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/solutions/accessibility-assistant" }
+        },
+        {
+          "name": "Crear solución",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.solution) pm.collectionVariables.set('solutionCode', body.solution.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{solutionCode}}\",\n  \"name\": \"Solución de prueba Postman\",\n  \"type\": \"integration\",\n  \"summary\": \"Solución creada desde Postman para probar el CRUD.\",\n  \"description\": \"Descripción de la solución.\\n\\n## Funcionalidades\\n\\n- Primera funcionalidad\\n- Segunda funcionalidad\",\n  \"docStatus\": \"partial\",\n  \"members\": [\n    { \"name\": \"Laura Méndez\", \"role\": \"po\" },\n    { \"name\": \"Carlos Ríos\", \"role\": \"dev\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/solutions",
+            "description": "Usa el code de la variable `solutionCode`."
+          }
+        },
+        {
+          "name": "Crear con code duplicado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('409 Conflict', () => pm.response.to.have.status(409));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{solutionCode}}\",\n  \"name\": \"Duplicada\",\n  \"type\": \"addon\",\n  \"summary\": \"x\",\n  \"description\": \"x\"\n}"
+            },
+            "url": "{{baseUrl}}/solutions"
+          }
+        },
+        {
+          "name": "Crear con code inválido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('400 Bad Request', () => pm.response.to.have.status(400));"] }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"Código Inválido\",\n  \"name\": \"Prueba\",\n  \"type\": \"addon\",\n  \"summary\": \"x\",\n  \"description\": \"x\"\n}"
+            },
+            "url": "{{baseUrl}}/solutions"
+          }
+        },
+        {
+          "name": "Editar solución",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Responsables reemplazados', () => pm.expect(pm.response.json().solution.members.length).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Solución de prueba (editada)\",\n  \"type\": \"integration\",\n  \"summary\": \"Resumen actualizado.\",\n  \"description\": \"Descripción actualizada.\\n\\n## Funcionalidades\\n\\n- Única funcionalidad\",\n  \"docStatus\": \"complete\",\n  \"members\": [\n    { \"name\": \"Ana Torres\", \"role\": \"po\" }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/solutions/{{solutionCode}}",
+            "description": "Reemplaza los datos y la lista completa de responsables. No acepta cambiar el code."
+          }
+        },
+        {
+          "name": "Ver solución creada",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/solutions/{{solutionCode}}" }
+        }
+      ]
+    },
+    {
+      "name": "5. Secciones",
+      "item": [
+        {
+          "name": "Ver sección (seed: technical)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/solutions/accessibility-assistant/documents/technical" }
+        },
+        {
+          "name": "Crear o reemplazar sección",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('201 (creada) o 200 (reemplazada)', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"## Introducción\\n\\nTexto de la sección.\\n\\n## Parámetros\\n\\n| Código | Valor |\\n|---|---|\\n| `A` | 1 |\\n\\n## Video\\n\\n<div class=\\\"video-embed\\\">\\n  <iframe src=\\\"https://www.youtube-nocookie.com/embed/20SHvU2PKsM\\\" title=\\\"Introducción a la accesibilidad web\\\" allowfullscreen></iframe>\\n</div>\"\n}"
+            },
+            "url": "{{baseUrl}}/solutions/{{solutionCode}}/documents/{{documentType}}",
+            "description": "201 la primera vez (crea), 200 las siguientes (reemplaza). Tipos: technical, release-notes, user-guide, fact-sheet (variable `documentType`)."
+          }
+        },
+        {
+          "name": "Sección con iframe no permitido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('Dominio y title reportados', () => pm.expect(pm.response.json().details.length).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"## Video\\n\\n<iframe src=\\\"https://vimeo.com/123\\\"></iframe>\"\n}"
+            },
+            "url": "{{baseUrl}}/solutions/{{solutionCode}}/documents/{{documentType}}"
+          }
+        },
+        {
+          "name": "Ver sección creada",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": { "method": "GET", "url": "{{baseUrl}}/solutions/{{solutionCode}}/documents/{{documentType}}" }
+        },
+        {
+          "name": "Eliminar sección",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] }
+            }
+          ],
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/solutions/{{solutionCode}}/documents/{{documentType}}" }
+        }
+      ]
+    },
+    {
+      "name": "6. Componentes",
+      "item": [
+        {
+          "name": "Subir componente con archivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.component) {",
+                  "  pm.collectionVariables.set('componentId', body.component.id);",
+                  "  pm.test('Tiene archivo', () => pm.expect(body.component.hasFile).to.be.true);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "name", "value": "Instalador principal", "type": "text" },
+                { "key": "version", "value": "1.0.0", "type": "text" },
+                { "key": "file", "type": "file", "src": [], "description": "Selecciona un archivo de hasta 50 MB" }
+              ]
+            },
+            "url": "{{baseUrl}}/solutions/{{solutionCode}}/components",
+            "description": "**Antes de enviar**, en el campo `file` del Body elige un archivo de tu equipo. Guarda el id en `componentId`."
+          }
+        },
+        {
+          "name": "Obtener URL de descarga",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.url) pm.collectionVariables.set('downloadUrl', body.url);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/components/{{componentId}}/download",
+            "description": "Devuelve una URL prefirmada de 5 minutos y la guarda en `downloadUrl`."
+          }
+        },
+        {
+          "name": "Descargar archivo (URL prefirmada)",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{downloadUrl}}",
+            "description": "Descarga directa desde el almacenamiento con la URL firmada (sin token de la API). Usa *Send and Download* para guardar el archivo. Pasados 5 minutos responde 403."
+          }
+        },
+        {
+          "name": "Eliminar componente",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/components/{{componentId}}",
+            "description": "Elimina el componente y su archivo."
+          }
+        },
+        {
+          "name": "URL de descarga tras eliminar (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('El archivo ya no existe', () => pm.expect(pm.response.code).to.be.oneOf([403, 404]));"]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{downloadUrl}}",
+            "description": "La misma URL firmada ya no descarga nada, porque el objeto se borró del almacenamiento."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Limpieza",
+      "item": [
+        {
+          "name": "Eliminar solución",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/solutions/{{solutionCode}}",
+            "description": "Elimina la solución de prueba con sus secciones, componentes y archivos."
+          }
+        },
+        {
+          "name": "Eliminar usuario de prueba",
+          "event": [
+            {
+              "listen": "test",
+              "script": { "type": "text/javascript", "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/users/{{userId}}",
+            "description": "Elimina el usuario creado en Register."
+          }
+        }
+      ]
+    }
+  ]
+}
